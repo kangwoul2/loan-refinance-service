@@ -1,226 +1,144 @@
-# 4단계 완료 요약 - 대출 계산 알고리즘
+# 대출 계산 기능 구현 요약
 
-## ✅ 구현 완료 항목
+이 문서는 기존 TypeScript 기반 대출 계산 기능의 구성과 검증 항목을 정리합니다.
 
-### 1. 핵심 계산 엔진
-- **파일**: `src/lib/strategies/repayment-strategy.ts`
-- **내용**:
-  - `RepaymentStrategy` 인터페이스 (Strategy Pattern)
-  - `EqualPrincipalInterestStrategy` (원리금균등 상환)
-  - `EqualPrincipalStrategy` (원금균등 상환)
-  - `calculateEarlyRepayFee()` (중도상환 수수료 계산)
+## 1. 핵심 계산 구조
 
-### 2. 금융 상수 관리
-- **파일**: `src/lib/config/finance-config.ts`
-- **내용**:
-  - 인지세 계산 로직
-  - 금리/금액/기간 제한 상수
-  - 포맷팅 헬퍼 함수
-  - 유효성 검증 함수
+### 상환 방식별 계산
 
-### 3. 시뮬레이션 서비스
-- **파일**: `src/lib/services/simulation-service.ts`
-- **내용**:
-  - `simulateRefinancing()` - 단일 상품 시뮬레이션
-  - `findBestRefinancingOption()` - 최적 상품 찾기
-  - 손익분기점(BEP) 계산
-  - 추천 액션 결정 로직
+파일: `src/lib/strategies/repayment-strategy.ts`
 
-### 4. 입력값 검증
-- **파일**: `src/lib/utils/validation.ts`
-- **내용**:
-  - `ValidationError` 클래스
-  - `validateCurrentDebt()` - 현재 대출 검증
-  - `validateNewLoanProduct()` - 신규 상품 검증
-  - `validateSimulationInputs()` - 전체 입력값 검증
-  - 10가지 엣지 케이스 처리
+- `RepaymentStrategy` 공통 인터페이스
+- 원리금균등 계산
+- 원금균등 계산
+- 중도상환수수료 계산
 
-### 5. API 엔드포인트
-- **파일**: `src/app/api/simulate/route.ts`
-- **엔드포인트**: `POST /api/simulate`
-- **기능**:
-  - 대환대출 시뮬레이션 실행
-  - 입력값 검증
-  - 에러 핸들링
-  - 응답 타입 정의
+계산 흐름과 상환 방식별 계산식을 분리해 새로운 상환 방식이 추가되어도 기존 서비스 흐름의 변경을 줄이도록 구성했습니다.
 
-### 6. 테스트 시나리오
-- **파일**: `src/lib/utils/test-examples.ts`
-- **시나리오**:
-  1. 일반적인 대환대출 (즉시 이득)
-  2. 손해 보는 경우 (금리 상승)
-  3. 수수료 면제 대기 권장
-  4. 여러 상품 중 최적 선택
-  5. 엣지 케이스 - 무이자 대출
-  6. 원금균등 vs 원리금균등 비교
+### 금융 상수와 입력 범위
 
-### 7. 문서화
-- **파일**: `docs/edge-cases-analysis.md`
-- **내용**:
-  - 10가지 주요 문제점 분석
-  - High/Medium/Low Priority 분류
-  - 테스트 체크리스트
-  - 개선 우선순위
+파일: `src/lib/config/finance-config.ts`
+
+- 인지세 계산
+- 금리·금액·기간 제한값
+- 표시 형식 변환
+- 입력값 검증
+
+### 시뮬레이션 서비스
+
+파일: `src/lib/services/simulation-service.ts`
+
+- 단일 상품 대환 시뮬레이션
+- 여러 상품 중 절감액이 큰 상품 탐색
+- 손익분기점 계산
+- 추천 결과 결정
+
+### 입력값 검증
+
+파일: `src/lib/utils/validation.ts`
+
+- 현재 대출 검증
+- 신규 상품 검증
+- 전체 입력값 검증
+- 주요 경계값과 오류 상황 처리
 
 ---
 
-## 📊 금융 수식 및 근거
+## 2. 주요 금융 계산
 
 ### 원리금균등 상환
-```
+
+```text
 월 상환액 = P × [r × (1+r)^n] / [(1+r)^n - 1]
 ```
-- **근거**: 등비급수 공식 (현재 가치의 합 = 미래 가치의 합)
-- **특징**: 매월 동일 금액, 초반 이자 비중 높음
+
+매월 같은 금액을 납부하며 초반에는 이자 비중이 높습니다.
 
 ### 원금균등 상환
-```
+
+```text
 월 원금 = P / n
-매월 이자 = 잔여원금 × 월 이자율
+매월 이자 = 남은 원금 × 월 이자율
 ```
-- **근거**: 원금 균등 분할, 이자는 잔액 기준
-- **특징**: 총 이자 부담 적음, 초기 상환액 높음
 
-### 중도상환 수수료
-```
-기본 수수료 = 잔여원금 × 수수료율(%)
-조정 수수료 = 기본 수수료 × (잔여개월 / 전체개월)
-```
-- **근거**: 은행의 예상 이자 수익 손실 보전
-- **특징**: 시간 경과에 따라 비례 감소
+원금을 매달 같은 금액으로 갚아 시간이 지날수록 이자와 월 상환액이 감소합니다.
 
-### 손익분기점 (BEP)
+### 중도상환수수료
+
+```text
+기본 수수료 = 남은 원금 × 수수료율
+조정 수수료 = 기본 수수료 × (남은 적용기간 / 전체 적용기간)
 ```
-BEP(개월) = (중도상환 수수료 + 인지세) / 월별 절감액
+
+### 손익분기점
+
+```text
+손익분기점(개월) = 대환 비용 / 월 절감액
 ```
-- **근거**: 대환 비용 회수 기간
-- **의미**: BEP < 잔여 기간이면 대환 추천
+
+손익분기점이 남은 대출 기간보다 길다면 대환 비용을 회수하기 어렵다고 판단합니다.
 
 ---
 
-## 🔍 엣지 케이스 처리 (10가지)
+## 3. 주요 경계 상황
 
-### 🔴 High Priority (필수 처리 완료)
-1. ✅ 잔여 기간 0 또는 음수
-2. ✅ 금리 음수
-3. ✅ 잔여 기간 > 전체 기간
+우선 확인할 항목:
 
-### 🟡 Medium Priority (향후 개선)
-4. BEP가 잔여 기간보다 긴 경우
-5. 수수료 면제 대기 로직 개선
-6. 큰 금액 오버플로우
+1. 잔여 기간이 0 이하인 경우
+2. 음수 금리가 입력된 경우
+3. 잔여 기간이 전체 기간보다 큰 경우
+4. 월 절감액이 0 이하인 경우
+5. 손익분기점이 잔여 기간보다 긴 경우
+6. 중도상환수수료 면제 시점과 즉시 대환 중 무엇이 유리한지 비교해야 하는 경우
+7. 일부 금융상품 데이터가 누락된 경우
 
-### 🟢 Low Priority (선택 개선)
-7. 여러 상품 추천 시 가중치
-8. 오류 메시지 사용자 친화성
-9. 성능 최적화
-10. NULL 처리
+상세 내용은 `docs/edge-cases-analysis.md`에 정리합니다.
 
 ---
 
-## 🌐 API 사용 예시
+## 4. API
 
-### 요청
-```bash
+기존 Next.js API:
+
+```http
 POST /api/simulate
-Content-Type: application/json
-
-{
-  "currentDebt": {
-    "principal": 50000000,
-    "interestRate": 5.5,
-    "remainingMonths": 36,
-    "totalMonths": 60,
-    "repaymentType": "원리금균등",
-    "earlyRepayFeeRate": 1.5,
-    "feeWaiverMonths": 36
-  },
-  "loanProducts": [
-    {
-      "bankName": "KB",
-      "productName": "KB직장인신용대출",
-      "baseRate": 3.5,
-      "additionalRate": 1.7,
-      "salaryTransferDiscount": 0.3,
-      "userOtherDiscount": 0.0
-    }
-  ],
-  "hasSalaryTransfer": true,
-  "mode": "best"
-}
 ```
 
-### 응답
-```json
-{
-  "success": true,
-  "data": {
-    "totalDebtBefore": 53500000,
-    "totalDebtAfter": 51200000,
-    "earlyRepayFee": 625000,
-    "stampDuty": 70000,
-    "totalRefinanceCost": 695000,
-    "interestSavings": 3000000,
-    "netSavings": 2305000,
-    "monthlySavings": 65000,
-    "breakEvenMonths": 11,
-    "recommendedAction": "즉시_대환",
-    "currentRate": 5.5,
-    "newRate": 4.9,
-    "recommendedProduct": {
-      "bankName": "KB",
-      "productName": "KB직장인신용대출",
-      "rate": 4.9
-    }
-  }
-}
+실제 필드명과 응답 형식은 코드의 요청/응답 자료형을 기준으로 합니다.
+
+Java/Spring V2에서는 계산 책임을 서버로 옮겨 다음 API를 제공합니다.
+
+```http
+POST /api/v1/simulations
 ```
 
 ---
 
-## 📦 파일 구조
+## 5. 테스트 기준
 
-```
-src/
-├── lib/
-│   ├── config/
-│   │   └── finance-config.ts          # 금융 상수 관리
-│   ├── strategies/
-│   │   └── repayment-strategy.ts      # Strategy Pattern
-│   ├── services/
-│   │   └── simulation-service.ts      # 시뮬레이션 엔진
-│   └── utils/
-│       ├── validation.ts              # 입력값 검증
-│       └── test-examples.ts           # 테스트 시나리오
-└── app/
-    └── api/
-        └── simulate/
-            └── route.ts               # API 엔드포인트
-```
+### 정상 상황
+- 원리금균등 대환
+- 원금균등 대환
+- 우대금리 적용
+- 여러 상품 비교
 
----
+### 경계값
+- 금리 0%
+- 잔여 기간 1개월
+- 매우 긴 상환 기간
+- 손익분기점이 잔여 기간을 초과하는 경우
 
-## 🚀 다음 단계
-
-### 5단계: Next.js 프론트엔드 구축
-- [ ] 사용자 대출 정보 입력 폼
-- [ ] 시뮬레이션 결과 대시보드
-- [ ] Recharts 기반 시각화
-- [ ] Supabase 대출 상품 조회
-- [ ] 반응형 UI (Tailwind CSS)
-
-### 6단계: Vercel 배포
-- [ ] 환경 변수 설정
-- [ ] 빌드 최적화
-- [ ] Early Deploy 및 피드백
-- [ ] 도메인 연결
-
-### 7단계: 문서화 및 제출
-- [ ] README 최종 업데이트
-- [ ] 기획서 작성
-- [ ] 과제 제출
+### 오류 상황
+- 음수 금리
+- 허용 범위를 넘는 금리
+- 잔여 기간 0
+- 잔여 기간 > 전체 기간
+- 원금 0원
 
 ---
 
-**작성일**: 2026.02.11  
-**Git 커밋**: `1813da0` - feat: 4단계 대출 계산 알고리즘 완성
+## 6. 면접에서 설명할 핵심
+
+> 금융 계산은 작은 소수점 오차도 결과 신뢰성에 영향을 줄 수 있어 소수 정밀 연산을 사용했습니다. 상환 방식마다 계산 정책이 다르기 때문에 계산기를 분리했고, 서비스는 어떤 계산기를 사용할지만 결정하도록 했습니다. 경계값에서는 단순히 예외가 나지 않는 것보다 잘못된 금융 결과를 반환하지 않는 것을 우선했습니다. 이후 Java/Spring 백엔드에서는 같은 원칙을 `BigDecimal`, 입력 검증, 트랜잭션, 동시성 제어까지 확장했습니다.
+
+현재 프로젝트 전체 설명은 `README.md`와 `docs/INTERVIEW_GUIDE.md`를 기준으로 합니다.
