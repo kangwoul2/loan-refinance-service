@@ -1,43 +1,60 @@
-# Experiment Plan
+# 실험 계획
 
-## Experiment 1. Optimistic concurrency
+## 실험 1. 낙관적 락
 
-### Question
-동일 상품 금리를 여러 요청이 같은 version으로 수정하면 stale update를 어떻게 감지할 것인가?
+### 질문
+같은 상품 금리를 여러 요청이 같은 버전을 기준으로 동시에 수정하면 오래된 갱신 요청을 어떻게 감지할 것인가?
 
-### Baseline failure model
-read → modify → write를 version 검증 없이 수행하면 마지막 write가 이전 update를 덮어쓸 수 있습니다.
+### 기준 실패 상황
+버전 검증 없이 `읽기 → 수정 → 저장`을 수행하면 마지막 저장이 이전 변경을 덮어써 갱신 손실이 발생할 수 있습니다.
 
-### V2 mechanism
-- DB row에 JPA `@Version`
+### 적용 방식
+- DB 행에 JPA `@Version` 사용
 - API 요청이 `expectedVersion`을 함께 전송
-- application-level stale version 검증
-- flush/commit 시 JPA optimistic locking을 추가 방어선으로 사용
-- stale request는 HTTP 409로 반환
+- 애플리케이션에서 오래된 버전인지 먼저 확인
+- flush/commit 시 JPA 낙관적 락을 추가 방어선으로 사용
+- 오래된 수정 요청은 HTTP 409로 반환
 
-### Reproduction
-`python experiments/optimistic_lock_probe.py --product-id <id> --version <version>`
+### 재현
 
-### Metrics
-- HTTP 200 count
-- HTTP 409 count
-- final row version
-- final base_rate
+```bash
+python experiments/optimistic_lock_probe.py --product-id <id> --version <version>
+```
 
-## Experiment 2. Cache boundary
+### 측정
+- HTTP 200 개수
+- HTTP 409 개수
+- 최종 행 버전
+- 최종 기준 금리
 
-### Question
-반복 조회가 많은 상품 목록에서 cache가 유효한가?
+---
 
-### Protocol
-1. 동일 데이터셋과 동일 JVM 환경 준비
-2. cache warm-up 횟수 고정
-3. default/simple cache와 redis profile을 각각 반복 측정
-4. p50/p95 latency와 DB query count를 함께 비교
+## 실험 2. 캐시 경계
 
-### Important interpretation
-Redis는 network hop이 있으므로 단일 프로세스의 in-memory cache보다 항상 빠르지 않습니다. 이 실험의 목적은 Redis를 '더 빠른 캐시'라고 증명하는 것이 아니라 **다중 인스턴스에서 공유 가능한 cache가 필요한 시점의 비용을 수치로 이해하는 것**입니다.
+### 질문
+반복 조회가 많은 상품 목록에서 캐시가 실제로 도움이 되는가?
 
-## Experiment 3. Idempotent import
+### 방법
+1. 같은 데이터와 같은 JVM 환경 준비
+2. 캐시 준비 조회 횟수 고정
+3. 프로세스 내부 캐시와 Redis 공유 캐시를 각각 반복 측정
+4. p50/p95 지연시간과 DB 조회 횟수를 함께 비교
 
-동일한 `Idempotency-Key`로 product import를 재시도하여 동일 resource response가 반환되는지 확인합니다. 별도로 동시 중복 요청을 발생시켜 DB unique constraint가 최종 무결성 경계로 동작하는지도 관찰합니다.
+### 해석 시 주의
+Redis는 네트워크 통신이 필요하므로 단일 프로세스의 메모리 캐시보다 항상 빠르지 않습니다. 이 실험의 목적은 Redis를 더 빠른 캐시라고 증명하는 것이 아니라 **여러 서버가 같은 캐시를 공유해야 할 때 추가되는 비용을 확인하는 것**입니다.
+
+---
+
+## 실험 3. 멱등한 상품 적재
+
+같은 `Idempotency-Key`로 상품 적재 요청을 반복해도 같은 논리적 결과가 반환되는지 확인합니다.
+
+추가로 동시에 같은 상품을 저장하는 요청을 보내 DB 유일성 제약조건이 최종 무결성 경계로 동작하는지도 확인합니다.
+
+### 확인 항목
+- 같은 멱등성 키 재시도 시 중복 상품 생성 여부
+- 서로 다른 멱등성 키로 같은 상품 저장 시 유일성 제약조건 동작 여부
+- 상품 행 개수
+- 멱등성 기록 개수
+
+모든 실험은 **기준 상태 → 한 가지 변경 → 같은 조건에서 반복 → 결과와 단점 해석** 순서로 기록합니다.
