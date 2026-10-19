@@ -53,3 +53,7 @@ cache/
 .data/
 supabase/.temp/
 .ipynb_checkpoints
+
+# --- 개인 문서 / 산출물 (실명 포함 가능) ---
+*.pdf
+test-results/
